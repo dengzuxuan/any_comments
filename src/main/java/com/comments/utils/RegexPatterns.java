@@ -1,7 +1,7 @@
 package com.comments.utils;
 
 /**
- * @author 虎哥
+ * @author Colin
  */
 public abstract class RegexPatterns {
     /**

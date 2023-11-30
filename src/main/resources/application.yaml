@@ -2,10 +2,10 @@ server:
   port: 8081
 spring:
   application:
-    name: hmdp
+    name: comments
   datasource:
     driver-class-name: com.mysql.jdbc.Driver
-    url: jdbc:mysql://8.140.38.47:13306/hmdp?useSSL=false&serverTimezone=UTC
+    url: jdbc:mysql://8.140.38.47:13306/comments?useSSL=false&serverTimezone=UTC
     username: root
     password: 123456
   redis:
