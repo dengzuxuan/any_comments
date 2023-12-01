@@ -1,7 +1,11 @@
 package com.comments.service;
 
 import com.baomidou.mybatisplus.extension.service.IService;
+import com.comments.dto.LoginFormDTO;
+import com.comments.dto.Result;
 import com.comments.entity.User;
+
+import javax.servlet.http.HttpSession;
 
 /**
  * <p>
@@ -13,4 +17,9 @@ import com.comments.entity.User;
  */
 public interface IUserService extends IService<User> {
 
+    Result setcode(String phone, HttpSession session);
+
+    Result login(LoginFormDTO loginForm, HttpSession session);
+
+    Result getmyInfo();
 }

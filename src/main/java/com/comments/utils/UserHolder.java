@@ -1,6 +1,7 @@
 package com.comments.utils;
 
 import com.comments.dto.UserDTO;
+import com.comments.entity.User;
 
 public class UserHolder {
     private static final ThreadLocal<UserDTO> tl = new ThreadLocal<>();
