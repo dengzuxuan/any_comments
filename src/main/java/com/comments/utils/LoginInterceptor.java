@@ -27,7 +27,7 @@ public class LoginInterceptor implements HandlerInterceptor {
             response.setStatus(HttpServletResponse.SC_UNAUTHORIZED);
             return false;
         }
-        UserHolder.saveUser((User) loginUser);
+        UserHolder.saveUser((UserDTO) loginUser);
         return true;
     }
 

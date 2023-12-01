@@ -1,5 +1,6 @@
 package com.comments.service.impl;
 
+import cn.hutool.core.bean.BeanUtil;
 import cn.hutool.core.util.RandomUtil;
 import com.baomidou.mybatisplus.extension.service.impl.ServiceImpl;
 import com.comments.dto.LoginFormDTO;
@@ -63,13 +64,14 @@ public class UserServiceImpl extends ServiceImpl<UserMapper, User> implements IU
             //新建
             findUser = createUserWithPhone(loginForm.getPhone());
         }
-        session.setAttribute("user",findUser);
+
+        session.setAttribute("user", BeanUtil.copyProperties(findUser,UserDTO.class));
         return Result.ok();
     }
 
     @Override
     public Result getmyInfo() {
-        User user = UserHolder.getUser();
+        UserDTO user = UserHolder.getUser();
         return Result.ok(user);
     }
 
