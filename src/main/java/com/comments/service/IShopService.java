@@ -1,5 +1,6 @@
 package com.comments.service;
 
+import com.comments.dto.Result;
 import com.comments.entity.Shop;
 import com.baomidou.mybatisplus.extension.service.IService;
 
@@ -13,4 +14,5 @@ import com.baomidou.mybatisplus.extension.service.IService;
  */
 public interface IShopService extends IService<Shop> {
 
+    Result getShopInfo(Long id);
 }
