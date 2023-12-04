@@ -1,5 +1,6 @@
 package com.comments.service.impl;
 
+import cn.hutool.core.util.StrUtil;
 import cn.hutool.json.JSONUtil;
 import com.comments.dto.Result;
 import com.comments.entity.Shop;
@@ -11,7 +12,9 @@ import org.springframework.stereotype.Service;
 
 import javax.annotation.Resource;
 
-import static com.comments.utils.RedisConstants.CACHE_SHOP_KEY;
+import java.util.concurrent.TimeUnit;
+
+import static com.comments.utils.RedisConstants.*;
 
 /**
  * <p>
@@ -28,21 +31,41 @@ public class ShopServiceImpl extends ServiceImpl<ShopMapper, Shop> implements IS
 
     @Override
     public Result getShopInfo(Long id) {
-        if(id <= 0){
+        if(id < 0){
             return Result.fail("输入有效商店id");
         }
         String shopKey = CACHE_SHOP_KEY + id;
         String shopInfoJson = stringRedisTemplate.opsForValue().get(shopKey);
-        if(shopInfoJson!=null){
+        if(StrUtil.isNotBlank(shopInfoJson)){
             Shop shop = JSONUtil.toBean(shopInfoJson, Shop.class);
             return Result.ok(shop);
         }
 
-        Shop shop = getById(id);
-        if(shop == null){
+        if("".equals(shopInfoJson)){
             return Result.fail("该商店不存在");
         }
-        stringRedisTemplate.opsForValue().set(shopKey,JSONUtil.toJsonStr(shop));
+
+        Shop shop = getById(id);
+        if(shop == null){
+            //防止缓存穿透 使用【缓存空对象解决】
+            stringRedisTemplate.opsForValue().set(shopKey,"",CACHE_NULL_TTL,TimeUnit.MINUTES);
+            return Result.fail("该商店不存在");
+        }
+        stringRedisTemplate.opsForValue().set(shopKey,JSONUtil.toJsonStr(shop),CACHE_SHOP_TTL, TimeUnit.MINUTES);
         return Result.ok(shop);
+    }
+
+    @Override
+    public Result updateShopInfo(Shop shop) {
+        if(shop.getId() == null){
+            return Result.fail("请输入有效商店");
+        }
+        //先更新
+        updateById(shop);
+
+        //后删除缓存
+        String shopKey = CACHE_SHOP_KEY + shop.getId();
+        stringRedisTemplate.delete(shopKey);
+        return null;
     }
 }
