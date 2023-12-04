@@ -10,6 +10,7 @@ import com.comments.entity.Shop;
 import com.comments.mapper.ShopMapper;
 import com.comments.service.IShopService;
 import com.baomidou.mybatisplus.extension.service.impl.ServiceImpl;
+import com.comments.utils.CacheClient;
 import com.comments.utils.RedisData;
 import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.stereotype.Service;
@@ -35,16 +36,20 @@ import static com.comments.utils.RedisConstants.*;
 public class ShopServiceImpl extends ServiceImpl<ShopMapper, Shop> implements IShopService {
     @Resource
     StringRedisTemplate stringRedisTemplate;
+    @Resource
+    CacheClient cacheClient;
 
     @Override
     public Result getShopInfo(Long id) {
         if(id < 0){
             return Result.fail("输入有效商店id");
         }
+        //使用缓存空对象缓存穿透
+        //Shop shop = cacheClient.queryWithPassThroght(CACHE_SHOP_KEY, id, Shop.class, iddb -> getById(iddb), CACHE_SHOP_TTL, TimeUnit.MINUTES);
         //使用互斥锁解决缓存击穿
         //Shop shop = queryWithMutex(id);
         //使用逻辑过期解决缓存击穿
-        Shop shop = queryWithLogistical(id);
+        Shop shop = cacheClient.queryWithLogicalExpire(CACHE_SHOP_KEY,id,Shop.class,iddb->getById(iddb),CACHE_SHOP_TTL,TimeUnit.MINUTES);
         if(shop==null){
             return Result.fail("该商店不存在");
         }
@@ -54,14 +59,18 @@ public class ShopServiceImpl extends ServiceImpl<ShopMapper, Shop> implements IS
     private Shop queryWithPassThought(Long id){
         String shopKey = CACHE_SHOP_KEY + id;
         String shopInfoJson = stringRedisTemplate.opsForValue().get(shopKey);
+        //isNotBlank在null、""、"\t\n"的情况时返回false
         if(StrUtil.isNotBlank(shopInfoJson)){
+            //存在缓存直接返回
             return JSONUtil.toBean(shopInfoJson, Shop.class);
         }
 
-        if("".equals(shopInfoJson)){
+        //json数据不为null 那么只能是 "" 是命中了空值 这时候限制缓存穿透直接返回
+        if(shopInfoJson!=null){
             return null;
         }
 
+        //排除下来此时json只能为null，即没有缓存，可以加载缓存了
         Shop shop = getById(id);
         if(shop == null){
             //防止缓存穿透 使用【缓存空对象解决】
