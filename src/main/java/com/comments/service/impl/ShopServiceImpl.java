@@ -46,6 +46,7 @@ public class ShopServiceImpl extends ServiceImpl<ShopMapper, Shop> implements IS
         if(id < 0){
             return Result.fail("输入有效商店id");
         }
+
         //使用缓存空对象缓存穿透
         //Shop shop = cacheClient.queryWithPassThroght(CACHE_SHOP_KEY, id, Shop.class, iddb -> getById(iddb), CACHE_SHOP_TTL, TimeUnit.MINUTES);
         //使用互斥锁解决缓存击穿
