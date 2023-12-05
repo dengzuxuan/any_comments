@@ -10,6 +10,8 @@ import com.comments.service.IVoucherOrderService;
 import com.baomidou.mybatisplus.extension.service.impl.ServiceImpl;
 import com.comments.utils.RedisIdWorker;
 import com.comments.utils.UserHolder;
+import lombok.Synchronized;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -25,13 +27,14 @@ import java.time.LocalDateTime;
  * @since 2023-12-01
  */
 @Service
-@Transactional
 public class VoucherOrderServiceImpl extends ServiceImpl<VoucherOrderMapper, VoucherOrder> implements IVoucherOrderService {
 
     @Resource
     ISeckillVoucherService seckillVoucherService;
     @Resource
     RedisIdWorker redisIdWorker;
+    @Autowired
+    VoucherOrderServiceImpl voucherOrderService;
     //生成秒杀订单
     @Override
     public Result seckillVoucher(Long voucherId) {
@@ -54,11 +57,28 @@ public class VoucherOrderServiceImpl extends ServiceImpl<VoucherOrderMapper, Vou
             return Result.fail("很抱歉，优惠券已被抢光~");
         }
 
+        Long userId = UserHolder.getUser().getId();
+        synchronized (userId){
+            return voucherOrderService.getOrder(voucherId);
+        }
+    }
+
+    @Override
+    @Transactional
+    public Result getOrder(Long voucherId) {
+        //判定一人一单
+        int userCount = query().
+                eq("user_id", UserHolder.getUser().getId()).
+                eq("voucher_id",voucherId).count();
+        if(userCount!=0){
+            return Result.fail("每个用户只能购买一个");
+        }
+
         boolean successFlag = seckillVoucherService.update().
                 setSql("stock = stock - 1").
                 eq("voucher_id", voucherId).
                 gt("stock",0). //添加乐观锁，确保stock是大于0的，防止超卖问题
-                update();
+                        update();
         if(!successFlag){
             return Result.fail("很抱歉，优惠券已被抢光~");
         }
