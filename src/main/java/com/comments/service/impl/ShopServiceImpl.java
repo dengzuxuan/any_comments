@@ -14,9 +14,11 @@ import com.comments.utils.CacheClient;
 import com.comments.utils.RedisData;
 import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
 
 import javax.annotation.Resource;
 
+import java.beans.Transient;
 import java.time.LocalDateTime;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
@@ -152,6 +154,8 @@ public class ShopServiceImpl extends ServiceImpl<ShopMapper, Shop> implements IS
         }
         return shop;
     }
+    //加上事务 保证cache aside更新db+删除缓存的原子性
+    @Transactional
     @Override
     public Result updateShopInfo(Shop shop) {
         if(shop.getId() == null){
