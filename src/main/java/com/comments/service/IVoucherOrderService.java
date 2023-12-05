@@ -1,5 +1,6 @@
 package com.comments.service;
 
+import com.comments.dto.Result;
 import com.comments.entity.VoucherOrder;
 import com.baomidou.mybatisplus.extension.service.IService;
 
@@ -13,4 +14,6 @@ import com.baomidou.mybatisplus.extension.service.IService;
  */
 public interface IVoucherOrderService extends IService<VoucherOrder> {
 
+    Result seckillVoucher(Long voucherId);
+    Result getOrder(Long voucherId);
 }
