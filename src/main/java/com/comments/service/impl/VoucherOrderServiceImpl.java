@@ -54,7 +54,11 @@ public class VoucherOrderServiceImpl extends ServiceImpl<VoucherOrderMapper, Vou
             return Result.fail("很抱歉，优惠券已被抢光~");
         }
 
-        boolean successFlag = seckillVoucherService.update().setSql("stock = stock - 1").eq("voucher_id", voucherId).update();
+        boolean successFlag = seckillVoucherService.update().
+                setSql("stock = stock - 1").
+                eq("voucher_id", voucherId).
+                gt("stock",0). //添加乐观锁，确保stock是大于0的，防止超卖问题
+                update();
         if(!successFlag){
             return Result.fail("很抱歉，优惠券已被抢光~");
         }
