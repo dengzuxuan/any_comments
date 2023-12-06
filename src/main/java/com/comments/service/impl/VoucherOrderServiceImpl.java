@@ -1,5 +1,6 @@
 package com.comments.service.impl;
 
+import cn.hutool.core.lang.UUID;
 import com.comments.dto.Result;
 import com.comments.dto.UserDTO;
 import com.comments.entity.SeckillVoucher;
@@ -19,6 +20,7 @@ import org.springframework.transaction.annotation.Transactional;
 
 import javax.annotation.Resource;
 import java.time.LocalDateTime;
+import java.util.concurrent.TimeUnit;
 
 /**
  * <p>
@@ -30,6 +32,8 @@ import java.time.LocalDateTime;
  */
 @Service
 public class VoucherOrderServiceImpl extends ServiceImpl<VoucherOrderMapper, VoucherOrder> implements IVoucherOrderService {
+    private static final String LOCK_PREFIX = "lock:";
+    private static final String ID_PREFIX = UUID.randomUUID().toString(true);
 
     @Resource
     ISeckillVoucherService seckillVoucherService;
@@ -69,6 +73,7 @@ public class VoucherOrderServiceImpl extends ServiceImpl<VoucherOrderMapper, Vou
 
         //采用redis分布式锁 以解决不同进程间上锁问题
         SimpleRedisLock redisLock = new SimpleRedisLock(stringRedisTemplate,"order:" + userId);
+        //Boolean successFlag = stringRedisTemplate.opsForValue().setIfAbsent(LOCK_PREFIX + "order", ID_PREFIX+"_"+ Thread.currentThread().getId(), 5, TimeUnit.SECONDS);
         boolean successFlag = redisLock.setLock(5);
         if(!successFlag){
             //未成功获取锁
@@ -77,7 +82,7 @@ public class VoucherOrderServiceImpl extends ServiceImpl<VoucherOrderMapper, Vou
         try {
             return voucherOrderService.getOrder(voucherId);
         }finally {
-            redisLock.unLock();
+            stringRedisTemplate.delete(LOCK_PREFIX + "order");
         }
     }
 
