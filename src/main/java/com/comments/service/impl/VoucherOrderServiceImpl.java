@@ -1,5 +1,6 @@
 package com.comments.service.impl;
 
+import cn.hutool.core.lang.UUID;
 import com.comments.dto.Result;
 import com.comments.dto.UserDTO;
 import com.comments.entity.SeckillVoucher;
@@ -9,14 +10,20 @@ import com.comments.service.ISeckillVoucherService;
 import com.comments.service.IVoucherOrderService;
 import com.baomidou.mybatisplus.extension.service.impl.ServiceImpl;
 import com.comments.utils.RedisIdWorker;
+import com.comments.utils.RedissonConfig;
+import com.comments.utils.SimpleRedisLock;
 import com.comments.utils.UserHolder;
 import lombok.Synchronized;
+import org.redisson.api.RLock;
+import org.redisson.api.RedissonClient;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import javax.annotation.Resource;
 import java.time.LocalDateTime;
+import java.util.concurrent.TimeUnit;
 
 /**
  * <p>
@@ -28,16 +35,22 @@ import java.time.LocalDateTime;
  */
 @Service
 public class VoucherOrderServiceImpl extends ServiceImpl<VoucherOrderMapper, VoucherOrder> implements IVoucherOrderService {
+    private static final String LOCK_PREFIX = "lock:";
+    private static final String ID_PREFIX = UUID.randomUUID().toString(true);
 
     @Resource
     ISeckillVoucherService seckillVoucherService;
     @Resource
     RedisIdWorker redisIdWorker;
+    @Resource
+    private StringRedisTemplate stringRedisTemplate;
     @Autowired
     VoucherOrderServiceImpl voucherOrderService;
+    @Autowired
+    RedissonClient redissonClient;
     //生成秒杀订单
     @Override
-    public Result seckillVoucher(Long voucherId) {
+    public Result seckillVoucher(Long voucherId) throws InterruptedException {
         //查询秒杀券信息
         SeckillVoucher voucher = seckillVoucherService.getById(voucherId);
         if(voucher == null){
@@ -58,8 +71,27 @@ public class VoucherOrderServiceImpl extends ServiceImpl<VoucherOrderMapper, Vou
         }
 
         Long userId = UserHolder.getUser().getId();
-        synchronized (userId){
+        /*synchronized中获取互斥锁失败会一直等待锁的释放
+        synchronized (userId.toString().intern()){
             return voucherOrderService.getOrder(voucherId);
+        }*/
+
+        //采用redis分布式锁 以解决不同进程间上锁问题
+//        SimpleRedisLock redisLock = new SimpleRedisLock(stringRedisTemplate,"order:" + userId);
+//        boolean successFlag = redisLock.setLock(5);
+
+        //采用redissonLock中集成的分布式锁 可以解决重入 重释等问题
+        RLock redissonClientLock = redissonClient.getLock("order:" + userId);
+        boolean successFlag = redissonClientLock.tryLock(1,TimeUnit.MINUTES);
+        if(!successFlag){
+            //未成功获取锁
+            return Result.fail("一人仅可购买一个");
+        }
+        try {
+            return voucherOrderService.getOrder(voucherId);
+        }finally {
+            //redisLock.unLock();
+            redissonClientLock.unlock();
         }
     }
 

@@ -1,9 +1,11 @@
 package com.comments;
 
 import com.comments.entity.Shop;
+import com.comments.service.IUserService;
 import com.comments.service.impl.ShopServiceImpl;
 import com.comments.utils.CacheClient;
 import com.comments.utils.RedisIdWorker;
+import com.comments.utils.SimpleRedisLock;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
@@ -21,6 +23,8 @@ import static com.comments.utils.RedisConstants.CACHE_SHOP_KEY;
 
 @SpringBootTest
 class CommentsApplicationTests {
+    @Resource
+    private IUserService userService;
     @Autowired
     StringRedisTemplate stringRedisTemplate;
     @Resource
@@ -32,6 +36,12 @@ class CommentsApplicationTests {
     @Resource
     RedisIdWorker redisIdWorker;
     private ExecutorService executorService = Executors.newFixedThreadPool(300);
+    @Test
+    void testSetNX(){
+      SimpleRedisLock redisLock = new SimpleRedisLock(stringRedisTemplate,"order:1");
+       boolean successFlag = redisLock.setLock(5);
+        //stringRedisTemplate.opsForValue().setIfAbsent("test","value1",5,TimeUnit.MINUTES);
+    }
     @Test
     void testSaveShop() {
         Shop shop = shopService.getById(10);
