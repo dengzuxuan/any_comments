@@ -10,9 +10,12 @@ import com.comments.service.ISeckillVoucherService;
 import com.comments.service.IVoucherOrderService;
 import com.baomidou.mybatisplus.extension.service.impl.ServiceImpl;
 import com.comments.utils.RedisIdWorker;
+import com.comments.utils.RedissonConfig;
 import com.comments.utils.SimpleRedisLock;
 import com.comments.utils.UserHolder;
 import lombok.Synchronized;
+import org.redisson.api.RLock;
+import org.redisson.api.RedissonClient;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.stereotype.Service;
@@ -43,9 +46,11 @@ public class VoucherOrderServiceImpl extends ServiceImpl<VoucherOrderMapper, Vou
     private StringRedisTemplate stringRedisTemplate;
     @Autowired
     VoucherOrderServiceImpl voucherOrderService;
+    @Autowired
+    RedissonClient redissonClient;
     //生成秒杀订单
     @Override
-    public Result seckillVoucher(Long voucherId) {
+    public Result seckillVoucher(Long voucherId) throws InterruptedException {
         //查询秒杀券信息
         SeckillVoucher voucher = seckillVoucherService.getById(voucherId);
         if(voucher == null){
@@ -72,9 +77,12 @@ public class VoucherOrderServiceImpl extends ServiceImpl<VoucherOrderMapper, Vou
         }*/
 
         //采用redis分布式锁 以解决不同进程间上锁问题
-        SimpleRedisLock redisLock = new SimpleRedisLock(stringRedisTemplate,"order:" + userId);
-        //Boolean successFlag = stringRedisTemplate.opsForValue().setIfAbsent(LOCK_PREFIX + "order", ID_PREFIX+"_"+ Thread.currentThread().getId(), 5, TimeUnit.SECONDS);
-        boolean successFlag = redisLock.setLock(5);
+//        SimpleRedisLock redisLock = new SimpleRedisLock(stringRedisTemplate,"order:" + userId);
+//        boolean successFlag = redisLock.setLock(5);
+
+        //采用redissonLock中集成的分布式锁 可以解决重入 重释等问题
+        RLock redissonClientLock = redissonClient.getLock("order:" + userId);
+        boolean successFlag = redissonClientLock.tryLock(1,TimeUnit.MINUTES);
         if(!successFlag){
             //未成功获取锁
             return Result.fail("一人仅可购买一个");
@@ -82,7 +90,8 @@ public class VoucherOrderServiceImpl extends ServiceImpl<VoucherOrderMapper, Vou
         try {
             return voucherOrderService.getOrder(voucherId);
         }finally {
-            redisLock.unLock();
+            //redisLock.unLock();
+            redissonClientLock.unlock();
         }
     }
 

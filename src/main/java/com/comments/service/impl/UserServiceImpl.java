@@ -20,6 +20,10 @@ import org.springframework.stereotype.Service;
 import javax.annotation.Resource;
 import javax.servlet.http.HttpSession;
 
+import java.io.BufferedWriter;
+import java.io.File;
+import java.io.FileWriter;
+import java.io.IOException;
 import java.util.HashMap;
 import java.util.Map;
 import java.util.concurrent.TimeUnit;
@@ -100,7 +104,6 @@ public class UserServiceImpl extends ServiceImpl<UserMapper, User> implements IU
         UserDTO user = UserHolder.getUser();
         return Result.ok(user);
     }
-
     private User createUserWithPhone(String phone) {
         User newUser= new User();
         newUser.setPhone(phone);
