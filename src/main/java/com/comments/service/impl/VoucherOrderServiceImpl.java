@@ -82,7 +82,7 @@ public class VoucherOrderServiceImpl extends ServiceImpl<VoucherOrderMapper, Vou
         try {
             return voucherOrderService.getOrder(voucherId);
         }finally {
-            stringRedisTemplate.delete(LOCK_PREFIX + "order");
+            redisLock.unLock();
         }
     }
 
