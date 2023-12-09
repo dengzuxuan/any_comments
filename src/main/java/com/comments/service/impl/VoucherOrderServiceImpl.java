@@ -17,12 +17,15 @@ import lombok.Synchronized;
 import org.redisson.api.RLock;
 import org.redisson.api.RedissonClient;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.core.io.ClassPathResource;
 import org.springframework.data.redis.core.StringRedisTemplate;
+import org.springframework.data.redis.core.script.DefaultRedisScript;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import javax.annotation.Resource;
 import java.time.LocalDateTime;
+import java.util.Collections;
 import java.util.concurrent.TimeUnit;
 
 /**
@@ -37,7 +40,13 @@ import java.util.concurrent.TimeUnit;
 public class VoucherOrderServiceImpl extends ServiceImpl<VoucherOrderMapper, VoucherOrder> implements IVoucherOrderService {
     private static final String LOCK_PREFIX = "lock:";
     private static final String ID_PREFIX = UUID.randomUUID().toString(true);
-
+    private final static DefaultRedisScript<Long> ORDER_SCRIPT;//Long是返回值
+    static {
+        //动态加载unlock.lua内容
+        ORDER_SCRIPT = new DefaultRedisScript<>();
+        ORDER_SCRIPT.setLocation(new ClassPathResource("order.lua"));
+        ORDER_SCRIPT.setResultType(Long.class);
+    }
     @Resource
     ISeckillVoucherService seckillVoucherService;
     @Resource
@@ -98,35 +107,61 @@ public class VoucherOrderServiceImpl extends ServiceImpl<VoucherOrderMapper, Vou
     @Override
     @Transactional
     public Result getOrder(Long voucherId) {
-        //判定一人一单
-        int userCount = query().
-                eq("user_id", UserHolder.getUser().getId()).
-                eq("voucher_id",voucherId).count();
-        if(userCount!=0){
-            return Result.fail("每个用户只能购买一个");
-        }
-
-        boolean successFlag = seckillVoucherService.update().
-                setSql("stock = stock - 1").
-                eq("voucher_id", voucherId).
-                gt("stock",0). //添加乐观锁，确保stock是大于0的，防止超卖问题
-                        update();
-        if(!successFlag){
-            return Result.fail("很抱歉，优惠券已被抢光~");
-        }
-
-        //新建订单表
-        VoucherOrder voucherOrder = new VoucherOrder();
+        //获取用户id
+        Long userId = UserHolder.getUser().getId();
         //生成唯一订单id
         long orderId = redisIdWorker.getNextId("order");
-        voucherOrder.setId(orderId);
 
-        long userId = UserHolder.getUser().getId();
-        voucherOrder.setUserId(userId);
-
-        voucherOrder.setVoucherId(voucherId);
-        save(voucherOrder);
-
+        Long res = stringRedisTemplate.execute(
+                ORDER_SCRIPT,
+                Collections.emptyList(),
+                voucherId.toString(),
+                userId.toString(),
+                String.valueOf(orderId)
+        );
+        int resCode = res.intValue();
+        if(resCode != 0){
+            if(resCode == 1){
+                return Result.fail("很抱歉，优惠券已被抢光~");
+            }else if(resCode ==2){
+                return Result.fail("每个用户只能购买一个");
+            }
+        }
         return Result.ok(orderId);
     }
+//数据库IO的速度太慢 影响并发 所以改为拆分的方式
+//    @Override
+//    @Transactional
+//    public Result getOrder(Long voucherId) {
+//        //判定一人一单
+//        int userCount = query().
+//                eq("user_id", UserHolder.getUser().getId()).
+//                eq("voucher_id",voucherId).count();
+//        if(userCount!=0){
+//            return Result.fail("每个用户只能购买一个");
+//        }
+//
+//        boolean successFlag = seckillVoucherService.update().
+//                setSql("stock = stock - 1").
+//                eq("voucher_id", voucherId).
+//                gt("stock",0). //添加乐观锁，确保stock是大于0的，防止超卖问题
+//                        update();
+//        if(!successFlag){
+//            return Result.fail("很抱歉，优惠券已被抢光~");
+//        }
+//
+//        //新建订单表
+//        VoucherOrder voucherOrder = new VoucherOrder();
+//        //生成唯一订单id
+//        long orderId = redisIdWorker.getNextId("order");
+//        voucherOrder.setId(orderId);
+//
+//        long userId = UserHolder.getUser().getId();
+//        voucherOrder.setUserId(userId);
+//
+//        voucherOrder.setVoucherId(voucherId);
+//        save(voucherOrder);
+//
+//        return Result.ok(orderId);
+//    }
 }
