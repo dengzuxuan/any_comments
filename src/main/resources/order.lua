@@ -25,5 +25,6 @@ redis.call('incrby',stockKey,-1)
 
 --下单 保存用户到下单用户set中 set中使用sadd增加
 redis.call('sadd',orderKey,userId)
-return 0
 --发送到消息队列
+redis.call('xadd', 'stream.orders', '*', 'userId', userId, 'voucherId', voucherId, 'id', orderId)
+return 0
