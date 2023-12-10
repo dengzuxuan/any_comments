@@ -1,5 +1,6 @@
 package com.comments.service.impl;
 
+import cn.hutool.core.bean.BeanUtil;
 import cn.hutool.core.lang.UUID;
 import com.comments.dto.Result;
 import com.comments.dto.UserDTO;
@@ -20,6 +21,7 @@ import org.redisson.api.RLock;
 import org.redisson.api.RedissonClient;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.core.io.ClassPathResource;
+import org.springframework.data.redis.connection.stream.*;
 import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.data.redis.core.script.DefaultRedisScript;
 import org.springframework.stereotype.Service;
@@ -27,8 +29,11 @@ import org.springframework.transaction.annotation.Transactional;
 
 import javax.annotation.PostConstruct;
 import javax.annotation.Resource;
+import java.time.Duration;
 import java.time.LocalDateTime;
 import java.util.Collections;
+import java.util.List;
+import java.util.Map;
 import java.util.concurrent.*;
 
 /**
@@ -44,6 +49,7 @@ import java.util.concurrent.*;
 public class VoucherOrderServiceImpl extends ServiceImpl<VoucherOrderMapper, VoucherOrder> implements IVoucherOrderService {
     private static final String LOCK_PREFIX = "lock:";
     private static final String ID_PREFIX = UUID.randomUUID().toString(true);
+    private static final String STREAM_QUEUE_NAME = "stream.orders";
     private final static DefaultRedisScript<Long> ORDER_SCRIPT;//Long是返回值
     static {
         //动态加载unlock.lua内容
@@ -52,7 +58,7 @@ public class VoucherOrderServiceImpl extends ServiceImpl<VoucherOrderMapper, Vou
         ORDER_SCRIPT.setResultType(Long.class);
     }
     //阻塞队列的特点是：当有线程从队列中获取元素时，如果队列中没有元素的话会阻塞，直到队列里有
-    private BlockingQueue<VoucherOrder> orders = new ArrayBlockingQueue<>(1024*1024);
+    //private BlockingQueue<VoucherOrder> orders = new ArrayBlockingQueue<>(1024*1024);
     //异步获取的线程池
     private static final ExecutorService SECKILL_ORDER_EXECUTOR = Executors.newSingleThreadExecutor();
     //在进入该类时初始化该线程池
@@ -60,18 +66,63 @@ public class VoucherOrderServiceImpl extends ServiceImpl<VoucherOrderMapper, Vou
     private void init(){
         SECKILL_ORDER_EXECUTOR.submit(new VoucherOrderHandler());
     }
-    //异步获取阻塞队列然后保存到mysql的线程
+    //异步获取stream队列然后保存到mysql的线程
     private class VoucherOrderHandler implements Runnable{
         @Override
         public void run() {
             //执行保存操作
             while(true){
-                //不断轮询获取阻塞队列的待保存订单
+                //不断轮询获取stream队列的待保存订单
                 try {
-                    VoucherOrder voucherOrder = orders.take();
+                    List<MapRecord<String, Object, Object>> records = stringRedisTemplate.opsForStream().read(
+                            Consumer.from("g1", "c1"),
+                            StreamReadOptions.empty().count(1).block(Duration.ofSeconds(2)),
+                            StreamOffset.create(STREAM_QUEUE_NAME, ReadOffset.lastConsumed())
+                    );
+                    if(records == null || records.isEmpty()){
+                        continue;
+                    }
+
+                    Map<Object, Object> voucherMap = records.get(0).getValue();//结构为'userId', userId, 'voucherId', voucherId, 'id', orderId
+                    VoucherOrder voucherOrder = BeanUtil.fillBeanWithMap(voucherMap, new VoucherOrder(), true);
+                    //mysql中创建订单
                     saveVoucherOrder(voucherOrder);
+                    //发送ack，代表客户端成功消费
+                    stringRedisTemplate.opsForStream().acknowledge(STREAM_QUEUE_NAME,"g1",records.get(0).getId());
                 } catch (Exception e) {
-                    log.error("保存订单失败:"+e);
+                    log.error("消费队列失败:"+e);
+                    //进入消费padding阶段
+                    voucherOrderPaddingHandler();
+                }
+            }
+        }
+
+        private void voucherOrderPaddingHandler() {
+            while(true){
+                //不断轮询获取stream队列的待保存订单
+                try {
+                    List<MapRecord<String, Object, Object>> records = stringRedisTemplate.opsForStream().read(
+                            Consumer.from("g1", "c1"),
+                            StreamReadOptions.empty().count(1).block(Duration.ofSeconds(2)),
+                            StreamOffset.create(STREAM_QUEUE_NAME, ReadOffset.from("0"))//从第1个未消费的开始获取
+                    );
+                    if(records == null || records.isEmpty()){
+                        break;
+                    }
+
+                    Map<Object, Object> voucherMap = records.get(0).getValue();//结构为'userId', userId, 'voucherId', voucherId, 'id', orderId
+                    VoucherOrder voucherOrder = BeanUtil.fillBeanWithMap(voucherMap, new VoucherOrder(), true);
+                    //mysql中创建订单
+                    saveVoucherOrder(voucherOrder);
+                    //发送ack，代表客户端成功消费
+                    stringRedisTemplate.opsForStream().acknowledge(STREAM_QUEUE_NAME,"g1",records.get(0).getId());
+                } catch (Exception e) {
+                    log.error("padding消费队列失败:"+e);
+                    try {
+                        Thread.sleep(200);//休息200ms再执行
+                    } catch (InterruptedException ex) {
+                        e.printStackTrace();
+                    }
                 }
             }
         }
@@ -90,7 +141,6 @@ public class VoucherOrderServiceImpl extends ServiceImpl<VoucherOrderMapper, Vou
         try {
             voucherOrderService.createOrder(voucherOrder);
         }finally {
-            //redisLock.unLock();
             redissonClientLock.unlock();
         }
     }
@@ -113,6 +163,7 @@ public class VoucherOrderServiceImpl extends ServiceImpl<VoucherOrderMapper, Vou
         //生成唯一订单id
         long orderId = redisIdWorker.getNextId("order");
 
+        //ORDER_SCRIPT中包括抢单+写入消息队列，当抢单成功后，将订单信息保存入stream消息队列中，
         Long res = stringRedisTemplate.execute(
                 ORDER_SCRIPT,
                 Collections.emptyList(),
@@ -128,12 +179,6 @@ public class VoucherOrderServiceImpl extends ServiceImpl<VoucherOrderMapper, Vou
                 return Result.fail("每个用户只能购买一个");
             }
         }
-        //抢单成功后，将订单信息保存入阻塞队列中，然后新开线程去处理阻塞队列的订单数据，将订单数据写入mysql里
-        VoucherOrder voucherOrder = new VoucherOrder();
-        voucherOrder.setId(orderId);
-        voucherOrder.setUserId(userId);
-        voucherOrder.setVoucherId(voucherId);
-        orders.add(voucherOrder);
         return Result.ok(orderId);
     }
 
@@ -238,5 +283,36 @@ public class VoucherOrderServiceImpl extends ServiceImpl<VoucherOrderMapper, Vou
 //        //redisLock.unLock();
 //        redissonClientLock.unlock();
 //    }
+//
+// 使用阻塞队列，会占内存，数据不可靠，所以改为了基于redis的stream消息队列
+//@Override
+//public Result seckillVoucher(Long voucherId)  {
+//    //获取用户id
+//    Long userId = UserHolder.getUser().getId();
+//    //生成唯一订单id
+//    long orderId = redisIdWorker.getNextId("order");
+//
+//    Long res = stringRedisTemplate.execute(
+//            ORDER_SCRIPT,
+//            Collections.emptyList(),
+//            voucherId.toString(),
+//            userId.toString(),
+//            String.valueOf(orderId)
+//    );
+//    int resCode = res.intValue();
+//    if(resCode != 0){
+//        if(resCode == 1){
+//            return Result.fail("很抱歉，优惠券已被抢光~");
+//        }else if(resCode ==2){
+//            return Result.fail("每个用户只能购买一个");
+//        }
+//    }
+//    //抢单成功后，将订单信息保存入阻塞队列中，然后新开线程去处理阻塞队列的订单数据，将订单数据写入mysql里
+//    VoucherOrder voucherOrder = new VoucherOrder();
+//    voucherOrder.setId(orderId);
+//    voucherOrder.setUserId(userId);
+//    voucherOrder.setVoucherId(voucherId);
+//    orders.add(voucherOrder);
+//    return Result.ok(orderId);
 //}
 }
