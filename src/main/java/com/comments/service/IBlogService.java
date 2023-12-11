@@ -1,5 +1,6 @@
 package com.comments.service;
 
+import com.comments.dto.Result;
 import com.comments.entity.Blog;
 import com.baomidou.mybatisplus.extension.service.IService;
 
@@ -13,4 +14,7 @@ import com.baomidou.mybatisplus.extension.service.IService;
  */
 public interface IBlogService extends IService<Blog> {
 
+    Result querySingleBlog(Long id);
+
+    Result queryHotBlogs(int current);
 }
