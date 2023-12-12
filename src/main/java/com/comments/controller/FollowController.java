@@ -1,9 +1,12 @@
 package com.comments.controller;
 
 
-import org.springframework.web.bind.annotation.RequestMapping;
+import com.comments.dto.Result;
+import com.comments.service.IFollowService;
+import com.comments.service.impl.FollowServiceImpl;
+import org.springframework.web.bind.annotation.*;
 
-import org.springframework.web.bind.annotation.RestController;
+import javax.annotation.Resource;
 
 /**
  * <p>
@@ -16,5 +19,15 @@ import org.springframework.web.bind.annotation.RestController;
 @RestController
 @RequestMapping("/follow")
 public class FollowController {
+    @Resource
+    IFollowService followService;
+    @PutMapping("/{id}/{isFollow}")
+    public Result followUser(@PathVariable("id") Long followid,@PathVariable("isFollow") Boolean isFollow) {
+        return followService.followUser(followid,isFollow);
+    }
 
+    @GetMapping("/or/not/{id}")
+    public Result checkFollowInfo(@PathVariable("id") Long followid){
+        return followService.checkFollowId(followid);
+    }
 }

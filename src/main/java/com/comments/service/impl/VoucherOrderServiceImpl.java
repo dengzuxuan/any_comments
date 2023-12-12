@@ -117,12 +117,6 @@ public class VoucherOrderServiceImpl extends ServiceImpl<VoucherOrderMapper, Vou
                     //发送ack，代表客户端成功消费
                     stringRedisTemplate.opsForStream().acknowledge(STREAM_QUEUE_NAME,"g1",records.get(0).getId());
                 } catch (Exception e) {
-                    log.error("padding消费队列失败:"+e);
-                    try {
-                        Thread.sleep(200);//休息200ms再执行
-                    } catch (InterruptedException ex) {
-                        e.printStackTrace();
-                    }
                 }
             }
         }
