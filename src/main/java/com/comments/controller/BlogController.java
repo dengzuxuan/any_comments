@@ -46,6 +46,11 @@ public class BlogController {
         return blogService.updateBlogLike(id);
     }
 
+    @GetMapping("/likes/{id}")
+    public Result queryBlogLikeLists(@PathVariable("id") Long id) {
+        return blogService.queryBlogLikeLists(id);
+    }
+
     @GetMapping("/of/me")
     public Result queryMyBlog(@RequestParam(value = "current", defaultValue = "1") Integer current) {
         // 获取登录用户
