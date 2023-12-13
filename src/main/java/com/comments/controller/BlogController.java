@@ -82,4 +82,9 @@ public class BlogController {
         List<Blog> records = page.getRecords();
         return Result.ok(records);
     }
+    //给两个参数 一个是max【上一次查询的最大的时间戳】,一个是offset【上一次查询和最大时间戳相同的blog的数量】
+    @GetMapping("/of/follow")
+    public Result queryFollowBlogInfo(@RequestParam("lastId") Long lastId,@RequestParam(value = "offset",defaultValue = "0") Integer offset){
+        return blogService.queryFollowBlogInfo(lastId,offset);
+    }
 }
