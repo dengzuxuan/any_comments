@@ -7,10 +7,12 @@ import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import com.comments.dto.Result;
 import com.comments.dto.UserDTO;
 import com.comments.entity.Blog;
+import com.comments.entity.Follow;
 import com.comments.entity.User;
 import com.comments.mapper.BlogMapper;
 import com.comments.service.IBlogService;
 import com.baomidou.mybatisplus.extension.service.impl.ServiceImpl;
+import com.comments.service.IFollowService;
 import com.comments.service.IUserService;
 import com.comments.utils.SystemConstants;
 import com.comments.utils.UserHolder;
@@ -25,6 +27,7 @@ import java.util.Set;
 import java.util.stream.Collectors;
 
 import static com.comments.utils.RedisConstants.BLOG_LIKED_KEY;
+import static com.comments.utils.RedisConstants.FEED_KEY;
 
 /**
  * <p>
@@ -40,6 +43,8 @@ public class BlogServiceImpl extends ServiceImpl<BlogMapper, Blog> implements IB
     StringRedisTemplate stringRedisTemplate;
     @Resource
     private IUserService userService;
+    @Resource
+    private IFollowService followService;
     @Override
     public Result querySingleBlog(Long id) {
         Blog blog = getById(id);
@@ -107,6 +112,24 @@ public class BlogServiceImpl extends ServiceImpl<BlogMapper, Blog> implements IB
                 stream().map(user -> BeanUtil.copyProperties(user, UserDTO.class)).
                 collect(Collectors.toList());
         return Result.ok(top5User);
+    }
+
+    @Override
+    public Result saveBlog(Blog blog) {
+        // 获取登录用户
+        UserDTO user = UserHolder.getUser();
+        blog.setUserId(user.getId());
+        // 保存探店博文
+        boolean isSuccess = save(blog);
+        if(isSuccess){
+            //保存成功后，写入个该用户粉丝的收件箱中【redis】
+            List<Follow> followUserInfo = followService.query().eq("follow_user_id", user.getId()).list();
+            for(Follow follow:followUserInfo){
+                String followKey = FEED_KEY + follow.getUserId();
+                stringRedisTemplate.opsForZSet().add(followKey, String.valueOf(blog.getId()),System.currentTimeMillis());
+            }
+        }
+        return Result.ok(blog.getId());
     }
 
     private void setBlogUserInfo(Blog blog){
