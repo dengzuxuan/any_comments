@@ -1,8 +1,11 @@
 package com.comments.controller;
 
 
+import cn.hutool.core.bean.BeanUtil;
 import com.comments.dto.LoginFormDTO;
 import com.comments.dto.Result;
+import com.comments.dto.UserDTO;
+import com.comments.entity.User;
 import com.comments.entity.UserInfo;
 import com.comments.service.IUserInfoService;
 import com.comments.service.IUserService;
@@ -78,5 +81,19 @@ public class UserController {
         info.setUpdateTime(null);
         // 返回
         return Result.ok(info);
+    }
+
+        // UserController 根据id查询用户
+
+    @GetMapping("/{id}")
+    public Result queryUserById(@PathVariable("id") Long userId){
+        // 查询详情
+        User user = userService.getById(userId);
+        if (user == null) {
+            return Result.ok();
+        }
+        UserDTO userDTO = BeanUtil.copyProperties(user, UserDTO.class);
+        // 返回
+        return Result.ok(userDTO);
     }
 }
