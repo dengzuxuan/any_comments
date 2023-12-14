@@ -24,6 +24,8 @@ import java.io.BufferedWriter;
 import java.io.File;
 import java.io.FileWriter;
 import java.io.IOException;
+import java.time.LocalDateTime;
+import java.time.format.DateTimeFormatter;
 import java.util.HashMap;
 import java.util.Map;
 import java.util.concurrent.TimeUnit;
@@ -104,6 +106,22 @@ public class UserServiceImpl extends ServiceImpl<UserMapper, User> implements IU
         UserDTO user = UserHolder.getUser();
         return Result.ok(user);
     }
+
+    //使用bitmap进行签到
+    @Override
+    public Result sign() {
+        UserDTO user = UserHolder.getUser();
+        LocalDateTime now = LocalDateTime.now();
+        //key为 sign:userid:当前年:当前月
+        String keySuffix = now.format(DateTimeFormatter.ofPattern(":yyyyMM"));
+        String signKey = USER_SIGN_KEY+user.getId()+keySuffix;
+
+        int signDay = now.getDayOfMonth() - 1;
+        stringRedisTemplate.opsForValue().setBit(signKey,signDay,true);
+
+        return Result.ok();
+    }
+
     private User createUserWithPhone(String phone) {
         User newUser= new User();
         newUser.setPhone(phone);
