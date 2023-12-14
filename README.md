@@ -83,4 +83,4 @@ eg:aaa()上@Transactional，bbb()上没有，bbb()中调用aaa()，此时会发�
 5. Feed流模块  
 动态feed流推送方式分为三种，推模式，拉取模式以及推拉结合模式
    ![img](/pic/img_2.png)
-采用推模式，用户每发表一篇笔记就将该笔记的id放入该用户粉丝的【收件箱】中，基于sorted set实现的，score为时间戳
+采用推模式，用户每发表一篇笔记就将该笔记的id放入该用户粉丝的【收件箱】中，基于sorted set实现的，score为时间戳。此外，在获取关注动态时，采用滚动分页方法，就是每次都要传入max，offset，根据这两个值进行分页查询。从sorted set中使用rangexxxg查找比max值小的过offset的blog信息。
