@@ -14,6 +14,7 @@ import com.comments.service.IUserService;
 import com.comments.utils.RegexUtils;
 import com.comments.utils.UserHolder;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.data.redis.connection.BitFieldSubCommands;
 import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.stereotype.Service;
 
@@ -27,6 +28,7 @@ import java.io.IOException;
 import java.time.LocalDateTime;
 import java.time.format.DateTimeFormatter;
 import java.util.HashMap;
+import java.util.List;
 import java.util.Map;
 import java.util.concurrent.TimeUnit;
 
@@ -120,6 +122,40 @@ public class UserServiceImpl extends ServiceImpl<UserMapper, User> implements IU
         stringRedisTemplate.opsForValue().setBit(signKey,signDay,true);
 
         return Result.ok();
+    }
+
+    @Override
+    public Result signCount() {
+        UserDTO user = UserHolder.getUser();
+        LocalDateTime now = LocalDateTime.now();
+        //key为 sign:userid:当前年:当前月
+        String keySuffix = now.format(DateTimeFormatter.ofPattern(":yyyyMM"));
+        String signKey = USER_SIGN_KEY+user.getId()+keySuffix;
+
+        int dayOfMonth = now.getDayOfMonth();
+        // 5.获取本月截止今天为止的所有的签到记录，返回的是一个十进制的数字 BITFIELD sign:5:202203 GET u14 0
+        List<Long> bitField = stringRedisTemplate.opsForValue().bitField(
+                signKey,
+                BitFieldSubCommands.create().get(
+                        BitFieldSubCommands.BitFieldType.signed(dayOfMonth)
+                ).valueAt(0)
+        );
+
+        if(bitField == null || bitField.isEmpty()){
+            return Result.ok(0);
+        }
+
+        Long num = bitField.get(0);
+        if(num == null || num == 0){
+            return Result.ok(0);
+        }
+        //便利bitField，对每一位做1的与操作，得到数字的最后一个bit位
+        int count = 0;
+        while ((num & 1) != 0) {
+            count++;
+            num >>>= 1;
+        }
+        return Result.ok(count);
     }
 
     private User createUserWithPhone(String phone) {
